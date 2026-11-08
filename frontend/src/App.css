@@ -172,3 +172,46 @@
   color: #64748b;
   margin-top: 16px;
 }
+
+
+.cases-section {
+  margin-top: 36px;
+  margin-bottom: 40px;
+}
+
+.cases-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.cases-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.cases-table th {
+  background: #eaf0f8;
+  color: #17365d;
+  font-size: 14px;
+  padding: 16px;
+}
+
+.cases-table td {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 14px;
+}
+
+.cases-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.no-cases {
+  text-align: center;
+  color: #64748b;
+  padding: 28px;
+}
