@@ -4,7 +4,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-    DATABASE_URL: postgresql://postgres.jqvamiqctafgharpsayj
+      DATABASE_URL: ${DATABASE_URL}
 
   frontend:
     build:
