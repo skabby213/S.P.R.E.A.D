@@ -27,8 +27,34 @@ function App() {
         <p>Food Supply Traceback System</p>
       </header>
 
-      <main>
-        <h2>Product Traceback</h2>
+      
+<main>
+  <section className="dashboard-overview">
+    <h2>Dashboard Overview</h2>
+    <p className="sample-note">
+      Sample data — database integration pending
+    </p>
+
+    <div className="stats-grid">
+      <div className="stat-card">
+        <h3>Reported Cases</h3>
+        <p className="stat-number">24</p>
+      </div>
+
+      <div className="stat-card">
+        <h3>Tracked Lots</h3>
+        <p className="stat-number">8</p>
+      </div>
+
+      <div className="stat-card">
+        <h3>Locations</h3>
+        <p className="stat-number">5</p>
+      </div>
+    </div>
+  </section>
+
+  <h2>Product Traceback</h2>
+
 
         <p>
           Search for a food lot to view product and supply chain information.
@@ -52,21 +78,38 @@ function App() {
               Search
             </button>
           </form>
-          <button type="button" onClick={searchLot}>
-            Search
-          </button>
         </div>
 
-        <h2>Traceback Results</h2>
-        {lotData ? (
-          <div>
-            <p>Lot ID: {lotData.lot_id}</p>
-            <p>Lot Code: {lotData.lot_code}</p>
-            <p>Status: {lotData.status}</p>
-          </div>
-        ) : (
-          <p>No lot selected.</p>
-        )}
+       
+<section className="traceback-section">
+  <h2>Traceback Results</h2>
+
+  {lotData ? (
+    <div className="result-card">
+      <h3>Lot Information</h3>
+
+      <div className="result-row">
+        <span>Lot ID</span>
+        <strong>{lotData.lot_id}</strong>
+      </div>
+
+      <div className="result-row">
+        <span>Lot Code</span>
+        <strong>{lotData.lot_code}</strong>
+      </div>
+
+      <div className="result-row">
+        <span>Status</span>
+        <strong>{lotData.status}</strong>
+      </div>
+    </div>
+  ) : (
+    <div className="empty-results">
+      No lot selected. Enter a Lot ID above to begin.
+    </div>
+  )}
+</section>
+
       </main>
     </div>
   )
