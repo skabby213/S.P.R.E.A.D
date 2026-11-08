@@ -13,9 +13,13 @@ function App() {
 
     const jupyterBase = currentPath.split('/proxy/4173')[0]
 
-    const apiBase = currentPath.includes('/proxy/4173')
-      ? `${jupyterBase}/proxy/8080`
-      : 'http://localhost:8080'
+    // VITE_API_BASE is optional (set at build time, e.g. in Docker).
+  // Without it, behavior is unchanged: JupyterHub proxy path, else localhost.
+  const apiBase = import.meta.env.VITE_API_BASE
+    ? import.meta.env.VITE_API_BASE
+    : currentPath.includes('/proxy/4173')
+        ? `${jupyterBase}/proxy/8080`
+        : 'http://localhost:8080'
 
     try {
       const response = await fetch(

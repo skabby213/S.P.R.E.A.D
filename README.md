@@ -354,6 +354,18 @@ docker compose down
 
 **Note:** These Docker instructions describe the intended configuration. The complete container workflow still requires verification in a Docker-enabled environment.
 
+## Running with Docker (optional)
+
+Requires Docker Desktop (or Docker Engine + Compose). From the project root:
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:4173 and search for Lot ID `1`. The API is at http://localhost:8080/health. Stop with `Ctrl + C` (or `docker compose down`).
+
+The Docker setup is separate from `start.sh`; the JupyterHub workflow is unchanged.
+
 ## Current System Flow
 
 The currently implemented Lot ID search follows this process:
