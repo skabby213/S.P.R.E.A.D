@@ -23,6 +23,31 @@ int main() {
         {"Access-Control-Allow-Headers", "Content-Type"}
     });
 
+    // Return the total number of tracked lots from Supabase
+server.Get("/api/stats/lots", [database_url](const httplib::Request&, httplib::Response& res) {
+    PGconn* conn = PQconnectdb(database_url);
+
+    if (PQstatus(conn) != CONNECTION_OK) {
+        res.status = 503;
+        res.set_content(R"({"error":"Database connection unavailable"})", "application/json");
+        PQfinish(conn);
+        return;
+    }
+
+    PGresult* result = PQexec(conn, "SELECT COUNT(*) FROM public.lots");
+
+    if (PQresultStatus(result) != PGRES_TUPLES_OK) {
+        res.status = 500;
+        res.set_content(R"({"error":"Database query failed"})", "application/json");
+    } else {
+        std::string count = PQgetvalue(result, 0, 0);
+        res.set_content("{\"tracked_lots\":" + count + "}", "application/json");
+    }
+
+    PQclear(result);
+    PQfinish(conn);
+});
+
     server.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({"status":"ok","service":"S.P.R.E.A.D. API"})", "application/json");
     });
