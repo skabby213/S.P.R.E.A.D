@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import OutbreakMap from './OutbreakMap'
+import LabRecallDetails from './LabRecallDetails'
+import LotSearch from './LotSearch'
 import './App.css'
 
 const navigation = [
@@ -11,7 +13,6 @@ const navigation = [
 ]
 
 function App() {
-  const [lotId, setLotId] = useState('')
   const [lotData, setLotData] = useState(null)
   const [searchError, setSearchError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -47,8 +48,8 @@ function App() {
       .catch((error) => { console.error(error); setCaseError('Unable to load illness cases.') })
   }, [])
 
-  const searchLot = async () => {
-    const id = lotId.trim()
+  const searchLot = async (selectedId) => {
+    const id = String(selectedId).trim()
     if (!id) return
     setLoading(true)
     setSearchError('')
@@ -136,25 +137,7 @@ function App() {
         <section className="panel traceback-panel" id="traceback">
           <h2>Product Traceback</h2>
           <p className="panel-description">Search for a food lot to view product and supply chain information.</p>
-          <form
-            className="search-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              searchLot()
-            }}
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]+"
-              placeholder="Enter numeric Lot ID, e.g. 101"
-              aria-label="Lot ID"
-              value={lotId}
-              onChange={(event) => setLotId(event.target.value)}
-              required
-            />
-            <button type="submit" disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
-          </form>
+          <LotSearch onLookup={searchLot} loading={loading} />
 
           <div className="supply-chain" aria-label="Supply chain stages">
             <div className="chain-step"><span>Production</span><strong>{lotData?.production_location ?? 'Search for a lot'}</strong></div>
@@ -195,6 +178,7 @@ function App() {
               </div>
             </div>
           )}
+          {lotData && <LabRecallDetails key={lotData.lot_id} lotId={lotData.lot_id} />}
         </section>
 
         <div className="lower-grid">
@@ -221,10 +205,10 @@ function App() {
           <section className="panel map-panel" id="map">
             <div className="map-heading">
               <h2>Outbreak Map</h2>
-              <span>Cases by location</span>
+              <span>Shipment routes & reported exposures</span>
             </div>
             <div className="map-container">
-              <OutbreakMap />
+              <OutbreakMap lotId={lotData?.lot_id ?? null} shipments={shipments} />
             </div>
           </section>
         </div>
