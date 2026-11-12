@@ -199,3 +199,102 @@ button, input { font: inherit; }
   margin-top: 6px;
   line-height: 1.5;
 }
+/* Shipment history table below lot result */
+.shipment-history { margin-top: 22px; }
+.shipment-history h3 { font-size: 15px; margin-bottom: 12px; }
+.shipment-history .cases-table th, .shipment-history .cases-table td { text-align: left; }
+
+
+/* Lab & Recall Details: respects existing traceback panel styles */
+.lab-recall-details { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e4eaf0; }
+.lab-recall-details h3 { font-size: 17px; margin: 0 0 8px; }
+.lr-note { font-size: 12px; color: #586b81; line-height: 1.5; margin: 0 0 16px; }
+.lr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.lr-panel { border: 1px solid #e0e8f0; padding: 18px; border-radius: 12px; min-width: 0; background: #fbfcfe; }
+.lr-panel h4 { margin: 0 0 12px; font-size: 15px; }
+.lr-panel > p { color: #586b81; font-size: 13px; }
+.lr-item { background: white; border: 1px solid #e6ecf3; border-radius: 10px; padding: 14px; margin-top: 12px; }
+.lr-item-heading { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; font-size: 13px; }
+.lr-status { font-size: 11px; border-radius: 99px; padding: 5px 10px; font-weight: 700; }
+.lr-alert { color: #992e2e; background: #fee2e2; }
+.lr-neutral { color: #215b56; background: #d6f5e9; }
+.lr-pending { color: #7c5a12; background: #fef3c7; }
+.lr-prominent { font-size: 14px; font-weight: 700; margin: 12px 0; }
+.lr-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0 0; }
+.lr-facts dt { font-size: 11px; color: #586b81; margin-bottom: 4px; }
+.lr-facts dd { font-size: 13px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.lr-detail { margin: 12px 0 0; color: #4e5c71; font-size: 12px; line-height: 1.55; }
+.lr-error { color: #a02222 !important; }
+@media (max-width: 750px) { .lr-grid { grid-template-columns: 1fr; } }
+
+
+/* Map layout fix: keep toolbar and legend outside Leaflet's panning viewport.
+   Override older fixed-height / overflow-hidden rules above. */
+.map-container {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  background: transparent;
+}
+.map-container > .map-wrapper {
+  height: auto;
+  width: 100%;
+}
+.map-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+.map-viewport {
+  height: 450px;
+  min-height: 350px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #e4edf2;
+}
+.map-container .map-viewport .leaflet-container {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}
+@media (max-width: 520px) {
+  .map-viewport { height: 380px; }
+}
+
+/* Keep the product search dropdown above the Leaflet map */
+.traceback-panel {
+  position: relative;
+  z-index: 1000;
+}
+
+/* Keep the map below the searchable dropdown */
+.map-panel {
+  position: relative;
+  z-index: 1;
+}
+
+/* Allow the search dropdown to extend outside its panel */
+.traceback-panel,
+.search-form {
+  overflow: visible;
+}
+
+/* Make sure suggestions appear above neighboring content */
+.lot-search {
+  position: relative;
+  z-index: 1001;
+}
+
+.lot-search-dropdown {
+  position: absolute;
+  z-index: 1002;
+}

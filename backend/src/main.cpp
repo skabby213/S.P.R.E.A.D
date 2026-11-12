@@ -23,6 +23,38 @@ int main() {
         {"Access-Control-Allow-Headers", "Content-Type"}
     });
 
+    // Return a limited, alphabetized catalog for the product/lot search control.
+    // Numeric lookup still uses GET /api/lots/{id}; no database credentials go to React.
+    server.Get("/api/lots", [database_url](const httplib::Request&, httplib::Response& res) {
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+
+        PGresult* result = PQexec(conn, R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text
+            FROM (
+                SELECT l.lot_id, l.lot_code, fp.product_name
+                FROM public.lots l
+                JOIN public.food_products fp ON fp.product_id = l.product_id
+                ORDER BY fp.product_name, l.lot_code, l.lot_id
+                LIMIT 500
+            ) t
+        )SQL");
+        if (result && PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Lot catalog query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Unable to retrieve lot catalog"})", "application/json");
+        }
+        if (result) PQclear(result);
+        PQfinish(conn);
+    });
+
     // Return the total number of tracked lots from Supabase
 server.Get("/api/stats/lots", [database_url](const httplib::Request&, httplib::Response& res) {
     PGconn* conn = PQconnectdb(database_url);
@@ -51,6 +83,57 @@ server.Get("/api/stats/lots", [database_url](const httplib::Request&, httplib::R
     server.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({"status":"ok","service":"S.P.R.E.A.D. API"})", "application/json");
     });
+
+    server.Get("/api/summary",
+    [database_url](const httplib::Request&,
+                   httplib::Response& res) {
+
+    PGconn* conn = PQconnectdb(database_url);
+
+    if (PQstatus(conn) != CONNECTION_OK) {
+        res.status = 503;
+        res.set_content(
+            R"({"error":"Database unavailable"})",
+            "application/json"
+        );
+        PQfinish(conn);
+        return;
+    }
+
+    PGresult* result = PQexec(conn, R"SQL(
+        SELECT
+            (SELECT COUNT(*) FROM public.illness_reports)
+                AS reported_cases,
+            (SELECT COUNT(*) FROM public.lots)
+                AS tracked_lots,
+            (SELECT COUNT(*) FROM public.locations)
+                AS locations
+    )SQL");
+
+    if (PQresultStatus(result) == PGRES_TUPLES_OK &&
+        PQntuples(result) > 0) {
+
+        std::string json =
+            "{\"reported_cases\":" +
+            std::string(PQgetvalue(result, 0, 0)) +
+            ",\"tracked_lots\":" +
+            std::string(PQgetvalue(result, 0, 1)) +
+            ",\"locations\":" +
+            std::string(PQgetvalue(result, 0, 2)) +
+            "}";
+
+        res.set_content(json, "application/json");
+    } else {
+        res.status = 500;
+        res.set_content(
+            R"({"error":"Summary query failed"})",
+            "application/json"
+        );
+    }
+
+    PQclear(result);
+    PQfinish(conn);
+});
 
     server.Get(R"(/api/lots/(\d+))", [database_url](const httplib::Request& req, httplib::Response& res) {
         const std::string lot_id = req.matches[1].str();
@@ -88,6 +171,195 @@ server.Get("/api/stats/lots", [database_url](const httplib::Request&, httplib::R
             res.set_content(PQgetvalue(result, 0, 0), "application/json");
         }
         PQclear(result);
+        PQfinish(conn);
+    });
+
+
+    // Case records contain *candidate* lot matches, not proof of causation.
+    server.Get("/api/illness-reports", [database_url](const httplib::Request&, httplib::Response& res) {
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+        const char* sql = R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.illness_id, t.exposure_id), '[]'::json)::text
+            FROM (
+                SELECT ir.illness_id, e.exposure_id, ir.report_date, ir.onset_date,
+                       ir.outcome, ir.outbreak_id,
+                       loc.location_name,
+                       COALESCE(known_lot.lot_code, candidate.lot_code) AS lot_code,
+                       CASE WHEN e.exposure_id IS NULL THEN 'No exposure reported'
+                            WHEN e.lot_id IS NOT NULL THEN 'Identified lot (causation unconfirmed)'
+                            WHEN candidate.lot_code IS NOT NULL THEN 'Suspected match'
+                            ELSE 'Lot unknown' END AS status
+                FROM public.illness_reports ir
+                LEFT JOIN public.exposures e ON e.illness_id = ir.illness_id
+                LEFT JOIN public.locations loc ON loc.location_id = e.location_id
+                LEFT JOIN public.lots known_lot ON known_lot.lot_id = e.lot_id
+                LEFT JOIN LATERAL (
+                    SELECT l.lot_code
+                    FROM public.lots l
+                    JOIN public.shipment_items si ON si.lot_id = l.lot_id
+                    JOIN public.shipments s ON s.shipment_id = si.shipment_id
+                    WHERE l.product_id = e.product_id
+                      AND s.destination_location_id = e.location_id
+                      AND s.arrival_date IS NOT NULL
+                      AND e.exposure_date IS NOT NULL
+                      AND s.arrival_date <= e.exposure_date
+                    ORDER BY s.arrival_date DESC, l.lot_id
+                    LIMIT 1
+                ) candidate ON e.lot_id IS NULL
+            ) t
+        )SQL";
+        PGresult* result = PQexec(conn, sql);
+        if (PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Illness report query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Illness report query failed"})", "application/json");
+        }
+        PQclear(result);
+        PQfinish(conn);
+    });
+
+    // Map markers indicate *reported exposure locations*, not confirmed outbreak origins.
+    server.Get("/api/outbreak-locations", [database_url](const httplib::Request&, httplib::Response& res) {
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+        PGresult* result = PQexec(conn, R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.location_name), '[]'::json)::text
+            FROM (
+                SELECT loc.location_id, loc.location_name, loc.latitude, loc.longitude,
+                       COUNT(DISTINCT e.illness_id) AS reported_cases
+                FROM public.exposures e
+                JOIN public.locations loc ON loc.location_id = e.location_id
+                WHERE loc.latitude IS NOT NULL AND loc.longitude IS NOT NULL
+                GROUP BY loc.location_id, loc.location_name, loc.latitude, loc.longitude
+            ) t
+        )SQL");
+        if (PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Map query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Map query failed"})", "application/json");
+        }
+        PQclear(result);
+        PQfinish(conn);
+    });
+
+    // Return each shipment leg carrying the specified lot.
+    server.Get(R"(/api/lots/(\d+)/shipments)", [database_url](const httplib::Request& req, httplib::Response& res) {
+        const std::string lot_id = req.matches[1].str();
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+        const char* params[1] = { lot_id.c_str() };
+        PGresult* result = PQexecParams(conn, R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.ship_date, t.shipment_id), '[]'::json)::text
+            FROM (
+                SELECT s.shipment_id, s.ship_date, s.arrival_date, s.shipment_status,
+                       orig.location_name AS origin, dest.location_name AS destination,
+                       orig.location_type AS origin_type, dest.location_type AS destination_type,
+                       orig.latitude AS origin_latitude, orig.longitude AS origin_longitude,
+                       dest.latitude AS destination_latitude, dest.longitude AS destination_longitude,
+                       si.quantity_shipped, si.quantity_unit
+                FROM public.shipment_items si
+                JOIN public.shipments s ON s.shipment_id = si.shipment_id
+                JOIN public.locations orig ON orig.location_id = s.origin_location_id
+                JOIN public.locations dest ON dest.location_id = s.destination_location_id
+                WHERE si.lot_id = $1::integer
+            ) t
+        )SQL", 1, nullptr, params, nullptr, nullptr, 0);
+        if (PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Shipments query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Shipments query failed"})", "application/json");
+        }
+        PQclear(result);
+        PQfinish(conn);
+    });
+
+
+    // List laboratory tests for a lot. Positive means the tested sample was positive;
+    // it does NOT establish which illness, if any, this lot caused.
+    server.Get(R"(/api/lots/(\d+)/lab-tests)", [database_url](const httplib::Request& req, httplib::Response& res) {
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+        const std::string lot_id = req.matches[1].str();
+        const char* params[] = {lot_id.c_str()};
+        PGresult* result = PQexecParams(conn, R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.test_date DESC, t.test_id DESC), '[]'::json)::text
+            FROM (
+                SELECT lt.test_id, lt.test_date, lt.result, lt.sample_type,
+                       lt.notes, p.pathogen_name, p.pathogen_type,
+                       loc.location_name AS testing_location
+                FROM public.lab_tests lt
+                JOIN public.pathogens p ON p.pathogen_id = lt.pathogen_id
+                LEFT JOIN public.locations loc ON loc.location_id = lt.location_id
+                WHERE lt.lot_id = $1::integer
+            ) t
+        )SQL", 1, nullptr, params, nullptr, nullptr, 0);
+        if (result && PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Lab tests query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Lab tests query failed"})", "application/json");
+        }
+        if (result) PQclear(result);
+        PQfinish(conn);
+    });
+
+    // Recalls may affect many lots; return only recall items linked to this lot.
+    server.Get(R"(/api/lots/(\d+)/recalls)", [database_url](const httplib::Request& req, httplib::Response& res) {
+        PGconn* conn = PQconnectdb(database_url);
+        if (PQstatus(conn) != CONNECTION_OK) {
+            res.status = 503;
+            res.set_content(R"({"error":"Database unavailable"})", "application/json");
+            PQfinish(conn);
+            return;
+        }
+        const std::string lot_id = req.matches[1].str();
+        const char* params[] = {lot_id.c_str()};
+        PGresult* result = PQexecParams(conn, R"SQL(
+            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.recall_date DESC, t.recall_id DESC), '[]'::json)::text
+            FROM (
+                SELECT r.recall_id, r.recall_date, r.reason, r.status,
+                       ri.quantity_affected, ri.quantity_unit
+                FROM public.recall_items ri
+                JOIN public.recalls r ON r.recall_id = ri.recall_id
+                WHERE ri.lot_id = $1::integer
+            ) t
+        )SQL", 1, nullptr, params, nullptr, nullptr, 0);
+        if (result && PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
+            res.set_content(PQgetvalue(result, 0, 0), "application/json");
+        } else {
+            std::cerr << "Recalls query failed: " << PQerrorMessage(conn);
+            res.status = 500;
+            res.set_content(R"({"error":"Recalls query failed"})", "application/json");
+        }
+        if (result) PQclear(result);
         PQfinish(conn);
     });
 

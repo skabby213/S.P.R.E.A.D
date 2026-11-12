@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import OutbreakMap from './OutbreakMap'
+import LabRecallDetails from './LabRecallDetails'
+import LotSearch from './LotSearch'
 import './App.css'
 
 const navigation = [
@@ -11,12 +13,15 @@ const navigation = [
 ]
 
 function App() {
-  const [lotId, setLotId] = useState('')
   const [lotData, setLotData] = useState(null)
   const [searchError, setSearchError] = useState('')
   const [loading, setLoading] = useState(false)
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [trackedLots, setTrackedLots] = useState(null)
+  const [summary, setSummary] = useState(null)
+  const [cases, setCases] = useState([])
+  const [caseError, setCaseError] = useState('')
+  const [shipments, setShipments] = useState([])
 
   useEffect(() => {
   const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
@@ -30,12 +35,26 @@ function App() {
     .catch((error) => console.error('Tracked lots error:', error))
 }, [])
 
-  const searchLot = async () => {
-    const id = lotId.trim()
+  useEffect(() => {
+    const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+    fetch(`${apiBase}/api/summary`)
+      .then((r) => { if (!r.ok) throw new Error('Summary failed'); return r.json() })
+      .then(setSummary)
+      .catch((error) => console.error('Summary error:', error))
+
+    fetch(`${apiBase}/api/illness-reports`)
+      .then((r) => { if (!r.ok) throw new Error('Cases failed'); return r.json() })
+      .then(setCases)
+      .catch((error) => { console.error(error); setCaseError('Unable to load illness cases.') })
+  }, [])
+
+  const searchLot = async (selectedId) => {
+    const id = String(selectedId).trim()
     if (!id) return
     setLoading(true)
     setSearchError('')
     setLotData(null)
+    setShipments([])
 
     const currentPath = window.location.pathname
     const jupyterBase = currentPath.split('/proxy/4173')[0]
@@ -54,6 +73,13 @@ function App() {
         throw new Error('Unable to retrieve lot information.')
       }
       setLotData(await response.json())
+      try {
+        const shipmentsResponse = await fetch(`${apiBase}/api/lots/${encodeURIComponent(id)}/shipments`)
+        if (shipmentsResponse.ok) setShipments(await shipmentsResponse.json())
+        else console.error('Shipment history could not be loaded')
+      } catch (shipmentError) {
+        console.error('Shipment history error:', shipmentError)
+      }
     } catch (error) {
       console.error('Lot search failed:', error)
       setSearchError(error.message || 'Unable to retrieve lot information.')
@@ -87,58 +113,58 @@ function App() {
             <h1>Dashboard Overview</h1>
             <p>Monitor foodborne illness cases and trace them back through the supply chain.</p>
           </div>
-          <span className="data-badge">Live lot lookup · Other data pending</span>
+          <span className="data-badge">Live Supabase data · Synthetic demonstration</span>
         </div>
 
         <section className="stats-grid" aria-label="Dashboard statistics">
           <div className="stat-card">
             <h2>Reported Cases</h2>
-            <p className="stat-number">—</p>
-            <span className="stat-caption">Awaiting case data</span>
+            <p className="stat-number">{summary?.reported_cases ?? '—'}</p>
+            <span className="stat-caption">Reported illness records</span>
           </div>
           <div className="stat-card">
              <h2>Tracked Lots</h2>
-            <p className="stat-number">{trackedLots ?? '—'}</p>
-            <span className="stat-caption mint">Awaiting summary data</span>
+            <p className="stat-number">{summary?.tracked_lots ?? trackedLots ?? '—'}</p>
+            <span className="stat-caption mint">Database lot records</span>
           </div>
           <div className="stat-card">
             <h2>Locations</h2>
-            <p className="stat-number">—</p>
-            <span className="stat-caption">Awaiting location data</span>
+            <p className="stat-number">{summary?.locations ?? '—'}</p>
+            <span className="stat-caption">Recorded facilities and locations</span>
           </div>
         </section>
 
         <section className="panel traceback-panel" id="traceback">
           <h2>Product Traceback</h2>
           <p className="panel-description">Search for a food lot to view product and supply chain information.</p>
-          <form
-            className="search-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              searchLot()
-            }}
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]+"
-              placeholder="Enter numeric Lot ID, e.g. 101"
-              aria-label="Lot ID"
-              value={lotId}
-              onChange={(event) => setLotId(event.target.value)}
-              required
-            />
-            <button type="submit" disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
-          </form>
+          <LotSearch onLookup={searchLot} loading={loading} />
 
           <div className="supply-chain" aria-label="Supply chain stages">
-            <div className="chain-step"><span>Farm</span><strong>Not available</strong></div>
-            <div className="chain-step"><span>Processor</span><strong>Not available</strong></div>
-            <div className="chain-step"><span>Distributor</span><strong>Not available</strong></div>
-            <div className="chain-step retailer"><span>Retailer</span><strong>Not available</strong></div>
+            <div className="chain-step"><span>Production</span><strong>{lotData?.production_location ?? 'Search for a lot'}</strong></div>
+            <div className="chain-step"><span>Shipment legs</span><strong>{lotData ? shipments.length : '—'}</strong></div>
+            <div className="chain-step"><span>Destinations</span><strong>{shipments.length ? [...new Set(shipments.map((s) => s.destination))].join(', ') : 'Not available'}</strong></div>
+            <div className="chain-step retailer"><span>Latest delivery</span><strong>{shipments.length ? [...shipments].sort((a,b) => (b.arrival_date ?? '').localeCompare(a.arrival_date ?? ''))[0].arrival_date ?? 'Unknown' : 'Not available'}</strong></div>
           </div>
 
           {searchError && <p className="search-error" role="alert">{searchError}</p>}
+          {lotData && (
+            <div className="shipment-history">
+              <h3>Shipment History</h3>
+              {shipments.length === 0 ? <p>No shipments recorded for this lot.</p> : (
+                <div className="table-scroll">
+                  <table className="cases-table">
+                    <thead><tr><th>Shipment</th><th>Origin</th><th>Destination</th><th>Arrival</th><th>Quantity</th></tr></thead>
+                    <tbody>{shipments.map((s) => (
+                      <tr key={s.shipment_id}>
+                        <td>{s.shipment_id}</td><td>{s.origin}</td><td>{s.destination}</td>
+                        <td>{s.arrival_date ?? 'Pending'}</td><td>{s.quantity_shipped} {s.quantity_unit}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
           {lotData && (
             <div className="lot-results">
               <h3>Lot Information</h3>
@@ -152,6 +178,7 @@ function App() {
               </div>
             </div>
           )}
+          {lotData && <LabRecallDetails key={lotData.lot_id} lotId={lotData.lot_id} />}
         </section>
 
         <div className="lower-grid">
@@ -163,7 +190,14 @@ function App() {
                   <tr><th>Case ID</th><th>Location</th><th>Lot Code</th><th>Status</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td colSpan={4} className="no-cases">No case data available.</td></tr>
+                  {cases.length ? cases.map((item) => (
+                    <tr key={`${item.illness_id}-${item.exposure_id ?? 'none'}`}>
+                      <td>{item.illness_id}</td>
+                      <td>{item.location_name ?? 'Unknown'}</td>
+                      <td>{item.lot_code ?? 'Unidentified'}</td>
+                      <td>{item.status}</td>
+                    </tr>
+                  )) : <tr><td colSpan={4} className="no-cases">{caseError || 'No cases found.'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -171,10 +205,10 @@ function App() {
           <section className="panel map-panel" id="map">
             <div className="map-heading">
               <h2>Outbreak Map</h2>
-              <span>Cases by location</span>
+              <span>Shipment routes & reported exposures</span>
             </div>
             <div className="map-container">
-              <OutbreakMap />
+              <OutbreakMap lotId={lotData?.lot_id ?? null} shipments={shipments} />
             </div>
           </section>
         </div>
