@@ -298,3 +298,21 @@ button, input { font: inherit; }
   position: absolute;
   z-index: 1002;
 }
+
+/* S.P.R.E.A.D. illness table: scroll only its body area and keep headings visible. */
+.cases-panel .cases-table-wrapper {
+  max-height: 430px;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+.cases-panel .cases-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #edf2f7;
+}
+/* Optional: make the table readable at narrower widths. */
+.cases-panel .cases-table {
+  min-width: 480px;
+}
