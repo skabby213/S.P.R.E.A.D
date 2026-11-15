@@ -211,8 +211,29 @@ function App() {
               <OutbreakMap lotId={lotData?.lot_id ?? null} shipments={shipments} />
             </div>
           </section>
-        </div>
+               </div>
       </main>
+
+      <footer className="spread-footer">
+        <h3>S.P.R.E.A.D. — Academic Demonstration</h3>
+
+        <p>
+          This application is a student-developed food supply traceback
+          system. All illness cases, food products, shipments, laboratory
+          results, and recalls are fictional and used for demonstration
+          purposes only.
+        </p>
+
+        <p>
+          No information displayed represents an actual foodborne illness
+          outbreak, contamination event, or official product recall.
+        </p>
+
+        <small>
+          © 2026 S.P.R.E.A.D. | Middle Tennessee State University |
+          Educational Use Only
+        </small>
+      </footer>
     </div>
   )
 }
