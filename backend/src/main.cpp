@@ -235,15 +235,61 @@ server.Get("/api/stats/lots", [database_url](const httplib::Request&, httplib::R
             PQfinish(conn);
             return;
         }
+        // Map color describes laboratory results on candidate/identified lots,
+        // NOT confirmation that this facility or illness was contaminated.
+        // Retain every plausible candidate lot rather than arbitrarily selecting one.
         PGresult* result = PQexec(conn, R"SQL(
-            SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.location_name), '[]'::json)::text
-            FROM (
-                SELECT loc.location_id, loc.location_name, loc.latitude, loc.longitude,
-                       COUNT(DISTINCT e.illness_id) AS reported_cases
+            WITH exposure_lots AS (
+                SELECT e.location_id, e.illness_id, candidate.lot_id
                 FROM public.exposures e
-                JOIN public.locations loc ON loc.location_id = e.location_id
+                LEFT JOIN LATERAL (
+                    SELECT l.lot_id
+                    FROM public.lots l
+                    WHERE (e.lot_id IS NOT NULL AND l.lot_id = e.lot_id)
+                       OR (e.lot_id IS NULL AND e.product_id IS NOT NULL
+                           AND l.product_id = e.product_id
+                           AND e.exposure_date IS NOT NULL
+                           AND EXISTS (
+                               SELECT 1
+                               FROM public.shipment_items si
+                               JOIN public.shipments s ON s.shipment_id = si.shipment_id
+                               WHERE si.lot_id = l.lot_id
+                                 AND s.destination_location_id = e.location_id
+                                 AND s.arrival_date IS NOT NULL
+                                 AND s.arrival_date <= e.exposure_date
+                           ))
+                ) candidate ON TRUE
+            ),
+            findings AS (
+                SELECT el.location_id, el.illness_id, el.lot_id,
+                       CASE
+                         WHEN lt.test_id IS NULL THEN 'Unknown'
+                         WHEN LOWER(TRIM(lt.result)) = 'positive' THEN 'Positive'
+                         WHEN LOWER(TRIM(lt.result)) = 'negative' THEN 'Negative'
+                         WHEN LOWER(TRIM(lt.result)) = 'inconclusive' THEN 'Inconclusive'
+                         WHEN LOWER(TRIM(lt.result)) = 'pending' THEN 'Pending'
+                         ELSE 'Unknown'
+                       END AS result_status
+                FROM exposure_lots el
+                LEFT JOIN public.lab_tests lt ON lt.lot_id = el.lot_id
+            ),
+            summarized AS (
+                SELECT loc.location_id, loc.location_name, loc.latitude, loc.longitude,
+                       COUNT(DISTINCT f.illness_id) AS reported_cases,
+                       COUNT(DISTINCT f.lot_id) AS candidate_lots,
+                       ARRAY_AGG(DISTINCT f.result_status ORDER BY f.result_status) AS lab_statuses
+                FROM findings f
+                JOIN public.locations loc ON loc.location_id = f.location_id
                 WHERE loc.latitude IS NOT NULL AND loc.longitude IS NOT NULL
                 GROUP BY loc.location_id, loc.location_name, loc.latitude, loc.longitude
+            )
+            SELECT COALESCE(JSON_AGG(ROW_TO_JSON(t) ORDER BY t.location_name), '[]'::json)::text
+            FROM (
+                SELECT location_id, location_name, latitude, longitude,
+                       reported_cases, candidate_lots, lab_statuses,
+                       CASE WHEN CARDINALITY(lab_statuses) > 1 THEN 'Mixed'
+                            ELSE lab_statuses[1] END AS lab_status
+                FROM summarized
             ) t
         )SQL");
         if (PQresultStatus(result) == PGRES_TUPLES_OK && PQntuples(result) == 1) {
