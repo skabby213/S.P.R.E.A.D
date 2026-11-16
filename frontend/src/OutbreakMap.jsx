@@ -4,6 +4,18 @@ import 'leaflet/dist/leaflet.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
 
+// Legend refers only to lab evidence associated with possible or identified lots.
+const LAB_COLORS = {
+  Positive: '#dc2626',
+  Negative: '#15803d',
+  Inconclusive: '#ca8a04',
+  Pending: '#ea580c',
+  Mixed: '#9333ea',
+  Unknown: '#2563eb',
+}
+const LAB_LABELS = ['Positive', 'Negative', 'Inconclusive', 'Pending', 'Mixed', 'Unknown']
+const labColor = (status) => LAB_COLORS[status] || LAB_COLORS.Unknown
+
 function FitRoutes({ routes }) {
   const map = useMap()
   useEffect(() => {
@@ -50,12 +62,23 @@ export default function OutbreakMap({ lotId = null, shipments = [] }) {
           style={{ height: '100%', width: '100%' }}>
           <TileLayer attribution='&copy; OpenStreetMap contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {mode === 'cases' && locations.filter((loc) => loc.latitude != null && loc.longitude != null).map((loc) => (
+          {mode === 'cases' && locations.filter((loc) =>
+            loc.latitude != null && loc.longitude != null &&
+            Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude))
+          ).map((loc) => (
             <CircleMarker key={loc.location_id}
               center={[Number(loc.latitude), Number(loc.longitude)]}
-              radius={8} pathOptions={{ color: '#2563eb', fillColor: '#60a5fa', fillOpacity: 0.45 }}>
-              <Popup><strong>{loc.location_name}</strong><p>Reported exposures: {loc.reported_cases}</p>
-                <small>Reported exposure location, not a confirmed contamination source.</small></Popup>
+              radius={8} pathOptions={{ color: labColor(loc.lab_status), fillColor: labColor(loc.lab_status), fillOpacity: 0.4, weight: 2.5 }}>
+              <Tooltip>{loc.location_name} — {loc.lab_status || 'Unknown'} lab evidence</Tooltip>
+              <Popup>
+                <strong>{loc.location_name}</strong>
+                <p>Reported exposures: {loc.reported_cases}</p>
+                <p>Candidate/identified lots: {loc.candidate_lots ?? 'Not available'}</p>
+                <p>Associated lab evidence: <strong>{loc.lab_status || 'Unknown'}</strong></p>
+                {Array.isArray(loc.lab_statuses) && loc.lab_statuses.length > 1 &&
+                  <p>Findings: {loc.lab_statuses.join(', ')}</p>}
+                <small>Associated test results concern candidate or identified lots; they do not prove contamination at this location or causation of illness. Negative applies only to tests performed.</small>
+              </Popup>
             </CircleMarker>
           ))}
           {mode === 'routes' && <>
@@ -83,11 +106,27 @@ export default function OutbreakMap({ lotId = null, shipments = [] }) {
           </>}
         </MapContainer>
       </div>
-      <small style={{ color: '#52647a' }}>
-        {mode === 'routes'
-          ? 'Red = selected lot’s documented distribution legs (not confirmed pathogen spread). Lines are straight-line connections.'
-          : 'Blue circles = reported exposure locations; these do not establish contamination sources.'}
-      </small>
+      {mode === 'cases' && (
+        <div aria-label="Associated laboratory result legend" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <strong style={{ fontSize: 12, color: '#34465c' }}>Associated laboratory results</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center' }}>
+            {LAB_LABELS.map((label) => (
+              <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#34465c' }}>
+                <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: '50%', backgroundColor: LAB_COLORS[label], display: 'inline-block' }} />
+                {label}
+              </span>
+            ))}
+          </div>
+          <small style={{ color: '#52647a' }}>
+            Colors reflect lab results on candidate/identified lots, not confirmed contamination at the exposure location. Mixed means differing or unknown findings are associated with that location.
+          </small>
+        </div>
+      )}
+      {mode === 'routes' && (
+        <small style={{ color: '#52647a' }}>
+          Red = selected lot’s documented distribution legs (not confirmed pathogen spread). Lines are straight-line connections.
+        </small>
+      )}
     </div>
   )
 }
